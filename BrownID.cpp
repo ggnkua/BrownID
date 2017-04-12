@@ -133,6 +133,29 @@ int main(int argc, const char *argv[])
         //printf("%s\n", files[i].c_str());
     //}
 
+    fingerprints.reserve(10000);    // likely to need at least 10000 - but only a guess. optional, but avoids triggering unexpected growth.
+ 
+    int *newfp;
+ 
+    // create one
+    newfp = add_fingerprint(20);
+    // now load/fill it...
+ 
+    // create one
+    newfp = add_fingerprint(500);
+    // now load/fill it...
+     
+    // create one
+    newfp = add_fingerprint(70003);
+    // now load/fill it...
+ 
+    // walk over them
+    for (std::vector<int*>::iterator it = fingerprints.begin(); it != fingerprints.end(); it++)
+    {
+        int *data = *it;
+        // print the size
+        //printf("size: %d\n", data[0]);
+    }
     // Sliding window within the range of the reference values
     for (i = 0;i < (sizeof(reference) - sizeof(sample)) / sizeof(int);i++)
     {
