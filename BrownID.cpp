@@ -8,14 +8,6 @@ Lollage, ideas and some code by dml.
 */
 
 #include <stdio.h>
-
-#include <cstdio>
-#include <iostream>
-#include <cstdlib>
-#include <string.h>
-#include <stddef.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include "dirent.h"
 #include <vector>
 
@@ -34,13 +26,40 @@ unsigned int sample[] =
     //432158081,432111025,432045475,432076195,1531049362,1531041730,1245877058,1245885186,1254273330,1271968034,3381702946,3633362210,3365123331,3365059841,3369254657,3361119024,3356937008,3357461328,3642675136,3641692112,3679319504,1515053520,1516200401,1516138577,1516130387,1516195923,1511878771,1511878754,1510745186,1531716966,1498179062,1506144247,1489428215,1485233879,1485692615,3637296727,3654071894,3687626326,3687691894,2597181046,2609772390,2614097255,2614091239,2580467173,2580465105,2639251393,2639262401,2631922417,2631783009,2623394657,2623297377,2619163985,2619280451,3709803731,3709762803,3680386291,3688774850,3688773058,3655300546,3646911938,3638514034,3638546786,3638423907,3638419763,3638354195,3655197011,3680363891,3663590899,3680501219,3680460785,3679412177,3679412177,3679410128,1540183408,1541240096,1524397361,1516070145,1516136193,1511937795,1511998259,1511871267,1531733287,1540121959,2043473399,1489890807,1489894838,1489827254,3636769206,3636769238,3628446678,3645241174,2605055862,2613444454,2609379686,2609831271,2609827319,2576338375,2312095175,2311832021,2378953717,2312877025,2312754016,2573006688,2568811888,2568803697,2569000305,2552161361,2552161731,2552161731,3630089667,3632186819,3632121811,3632134115,3657295843,3655202803,3646814195,3646744403,3646220115,3646289235
     //Same clip, 4khz
     //155610246,197323143,180551047,180542851,239190930,239129522,239133606,104980902,106160294,114319590,114319458,131096615,97677591,80933133,74637085,74767149,74746669,75336469,73304837,207522053,224236807,175669575,175735127,174755927,175829091,175824995,171827299,438132835,438264931,455042387,424490451,139270131,139269107,147665649,1221403637,1221419861,1221423701,1221588549,1221582413,3364850269,3431959135,3432880847,3449588702,2409400318,2394735022,2396836846,2405200878,2405397499,2371777387,2371773291,2371841325,3714054205,3713783885,3715889357,3615096013,3615020239,3610821007,1429881231,1362784663,1362765239,1350182309,1348416929,1373451681,1910333937,1943920977,1935532304,1381818672,1377624356,1394402084,1359791908,1359792676,1364085268,1406028293,1452174102,1586260262,1587289126,1524174870,1511657478,1243246598,1243242758,169500950,156854070,148406099,148463571,147447794,147716082,1221452258,1221419507,1221423571,1213199319,3360682839,3369074295,3364813429,3364805213,2358217421,2359135197,2375861741,2380055021,2405220845,2405221369,2371802105,2371773307,2371774250,3424446766,3692886062
-};
+    //15 sec clip, 44khz, 8 secs at the end and 7 secs at the start
+    //3749180438,3675579410,3674530834,3674498114,3674631361,3674615236,3645259460,3636858564,3632746181,3632297687,3653297910,3653297894,3753960934,2680222950,2676020326,2676087926,2676227158,2647063639,2647055701,2622934864,2623458896,2640299536,2650789425,2684215859,2684150323,2684154722,2675753314,2635907174,2635911286,2639258743,2639160404,2634968388,2634972484,2634964300,2634960348,2639220188,2647483789,2509105054,2542663614,2542589886,2546783918,2539411374,2534917038,2537014174,3614896526,3581403598,4125422047,4125155709,4116767101,4116837661,3580230937,3580197151,2506438943,2540124446,2540058910,2254838046,2255422750,2263683358,2259497246,2259620158,2410623278,2377982246,2361144614,2361134374,2298218870,2296961367,2288572791,2288556407,2288819701,2288827901,2288828412,3379408892,3379412732,3375234812,1227742968,1228398296,1225261000,419949000,419916232,453339528,956656024,415594653,415594645,415332485,415333777,415448465,415446433,138616225,138558867,197295491,180550082,180521410,172002674,172012834,172011810,172012322,163623458,146846242,142651939
 
+};
 
 static const int S[] = { 1, 2, 4, 8, 16 }; // Magic Binary Numbers
 static const int B[] = { 0x55555555, 0x33333333, 0x0F0F0F0F, 0x00FF00FF, 0x0000FFFF };
 
 //#define min(x,y) (x>y?y:x)
+
+// Handle fingerprint table
+// This might have been written by dml,
+// but I don't think he'll publically acknowledge the fact.
+
+static std::vector<int*> fingerprints;
+
+static int * add_fingerprint(int _size)
+{
+    int * fingerprint_ptr = new int[_size + 1];
+    // store the size as first int
+    fingerprint_ptr[0] = _size;
+    fingerprints.push_back(fingerprint_ptr);
+    return fingerprint_ptr;
+}
+
+static void remove_all_fingerprints()
+{
+    // delete the new's and remove the vector entries
+    while (!fingerprints.empty())
+    {
+        delete[] fingerprints.back();
+        fingerprints.pop_back();
+    }
+}
 
 // Lifted from https://bbs.archlinux.org/viewtopic.php?pid=759526#p759526
 // with the addition of extension pattern matching
@@ -55,29 +74,6 @@ bool isDir(string dir) {
     }
     else {
         return false;
-    }
-}
-
-#include <vector>
- 
-static std::vector<int*> fingerprints;
- 
-static int * add_fingerprint(int _size)
-{
-    int * fingerprint_ptr = new int[_size+1];
-    // store the size as first int
-    fingerprint_ptr[0] = _size;
-    fingerprints.push_back(fingerprint_ptr);
-    return fingerprint_ptr;
-}
- 
-static void remove_all_fingerprints()
-{
-    // delete the new's and remove the vector entries
-    while (!fingerprints.empty())
-    {
-        delete[] fingerprints.back();
-        fingerprints.pop_back();
     }
 }
 
@@ -118,72 +114,104 @@ void getdir(char *dir, vector<string> &files, const char *extension, bool recurs
 
 int main(int argc, const char *argv[])
 {
-    int i,j;
-    unsigned int minbits = -1;                  // The minimum amount of set bits for all windows
+
+    fingerprints.reserve(10000);    // likely to need at least 10000 - but only a guess. optional, but avoids triggering unexpected growth.
 
     //create the basic path to the directory using command-line argument
-    char dir[] = "c:\\winstuff\\";
+    char dir[] = ".";
     //create the list of strings
     vector<string> files = vector<string>();
     //call the recursive directory traversal method
-    //getdir(dir, files, ".exe", true);
-    //list all files within the list.
-    //for (unsigned int i = 0;i < files.size();i++) {
-        //std::cout << files[i] << endl;
-        //printf("%s\n", files[i].c_str());
-    //}
+    getdir(dir, files, ".id", true);
+    
+    // read each file
+    for (unsigned int i = 0;i < files.size();i++) {
+        int *newfp;
 
-    fingerprints.reserve(10000);    // likely to need at least 10000 - but only a guess. optional, but avoids triggering unexpected growth.
- 
-    int *newfp;
- 
-    // create one
-    newfp = add_fingerprint(20);
-    // now load/fill it...
- 
-    // create one
-    newfp = add_fingerprint(500);
-    // now load/fill it...
-     
-    // create one
-    newfp = add_fingerprint(70003);
-    // now load/fill it...
- 
+        printf("Reading %s...\n", files[i].c_str());
+        
+        int lines = 0;
+        FILE *idfile;
+        idfile = fopen(files[i].c_str(),"r");
+
+        // find file's length in lines
+        while (!feof(idfile))
+        {
+            int z;
+            fscanf(idfile, "%d\n", &z);
+            lines++;
+        }
+
+        // allocate space for the file
+        newfp = add_fingerprint(lines);
+
+        rewind(idfile);
+
+        int j;
+        for (j = 0;j < lines;j++)
+        {
+            fscanf(idfile, "%d\n", ++newfp);
+        }
+        
+        fclose(idfile);
+
+    }
+
+    int i, j;
+    int globalfile = -1;                        // index for the file with the least set bits
+
     // walk over them
+    int curfile = 0;
+    unsigned int minbits = -1;                  // The minimum amount of set bits for all windows
     for (std::vector<int*>::iterator it = fingerprints.begin(); it != fingerprints.end(); it++)
     {
-        int *data = *it;
+        unsigned int *data = (unsigned int *)*it;
         // print the size
-        //printf("size: %d\n", data[0]);
-    }
+        printf("%s size: %d\n", files[curfile].c_str(), data[0]);
+        curfile++;
 
-    int reference_len = sizeof(reference) / sizeof(int);
-    int sample_len = sizeof(sample) / sizeof(int);
 
-    // Sliding window within the range of the reference values
-    for (i = 0;i < reference_len-sample_len;i++)
-    {
-        unsigned int *windowstart = &reference[i];  // Start of reference buffer for current window
-        unsigned int setbits = 0;                   // Total number of set bits in current window
-        // XOR the reference and sample values and count the set bits
-        for (j = 0;j < sample_len;j++)
+
+
+        int reference_len = data[0];
+        int sample_len = sizeof(sample) / sizeof(int);
+
+        if (reference_len < sample_len)
         {
-            // https://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
-            // No idea if that's the fastest one - will have to experiment
-            unsigned int v; // count bits set in this (32-bit value)
-            unsigned int c; // store the total here
-
-            v = windowstart[j] ^ sample[j];
-
-            c = v - ((v >> 1) & B[0]);
-            c = ((c >> S[1]) & B[1]) + (c & B[1]);
-            c = ((c >> S[2]) + c) & B[2];
-            c = ((c >> S[3]) + c) & B[3];
-            c = ((c >> S[4]) + c) & B[4];
-            setbits = setbits + c;
+            printf("file too short for our sample - skipping!\n");
+            continue;
         }
-        //printf("Window position=%d, number of set bits=%d\n", i, setbits);
-        minbits = min(minbits, setbits);
+
+        // Sliding window within the range of the reference values
+        for (i = 0;i < reference_len - sample_len;i++)
+        {
+            unsigned int *windowstart = &data[i+1];  // Start of reference buffer for current window
+            unsigned int setbits = 0;                   // Total number of set bits in current window
+            // XOR the reference and sample values and count the set bits
+            for (j = 0;j < sample_len;j++)
+            {
+                // https://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
+                // No idea if that's the fastest one - will have to experiment
+                unsigned int v; // count bits set in this (32-bit value)
+                unsigned int c; // store the total here
+
+                v = windowstart[j] ^ sample[j];
+
+                c = v - ((v >> 1) & B[0]);
+                c = ((c >> S[1]) & B[1]) + (c & B[1]);
+                c = ((c >> S[2]) + c) & B[2];
+                c = ((c >> S[3]) + c) & B[3];
+                c = ((c >> S[4]) + c) & B[4];
+                setbits = setbits + c;
+            }
+            //printf("Window position=%d, number of set bits=%d\n", i, setbits);
+            if (minbits>setbits)
+            {
+                minbits = setbits;
+                globalfile = curfile;
+            }
+        }
     }
     printf("Least amount of set bits: %d\n", minbits);
+    printf("Chosen file: %s\n", files[globalfile].c_str());
 }
