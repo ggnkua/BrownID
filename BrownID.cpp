@@ -16,7 +16,7 @@ Lollage, ideas and some code by dml.
 #include <stddef.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <dirent.h>
+#include "dirent.h"
 #include <vector>
 
 unsigned int reference[] =
@@ -83,7 +83,7 @@ static void remove_all_fingerprints()
 
 void getdir(char *dir, vector<string> &files, const char *extension, bool recursive) {
     DIR *dp; //create the directory object
-    char *dir_local=(char*)malloc(strlen(dir)+1);
+    char *dir_local=(char*)malloc(strlen(dir)+2);
     strcpy(dir_local,dir);
     struct dirent *entry; //create the entry structure
     int extensize = strlen(extension);
@@ -126,7 +126,7 @@ int main(int argc, const char *argv[])
     //create the list of strings
     vector<string> files = vector<string>();
     //call the recursive directory traversal method
-    getdir(dir, files, ".exe", true);
+    //getdir(dir, files, ".exe", true);
     //list all files within the list.
     //for (unsigned int i = 0;i < files.size();i++) {
         //std::cout << files[i] << endl;
@@ -156,13 +156,17 @@ int main(int argc, const char *argv[])
         // print the size
         //printf("size: %d\n", data[0]);
     }
+
+    int reference_len = sizeof(reference) / sizeof(int);
+    int sample_len = sizeof(sample) / sizeof(int);
+
     // Sliding window within the range of the reference values
-    for (i = 0;i < (sizeof(reference) - sizeof(sample)) / sizeof(int);i++)
+    for (i = 0;i < reference_len-sample_len;i++)
     {
         unsigned int *windowstart = &reference[i];  // Start of reference buffer for current window
         unsigned int setbits = 0;                   // Total number of set bits in current window
         // XOR the reference and sample values and count the set bits
-        for (j = 0;j < sizeof(sample) / sizeof(int);j++)
+        for (j = 0;j < sample_len;j++)
         {
             // https://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
             // No idea if that's the fastest one - will have to experiment
