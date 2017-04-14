@@ -82,7 +82,7 @@ void getdir(char *dir, vector<string> &files, const char *extension, bool recurs
     char *dir_local=(char*)malloc(strlen(dir)+2);
     strcpy(dir_local,dir);
     struct dirent *entry; //create the entry structure
-    int extensize = strlen(extension);
+    int extensize = (int)strlen(extension);
     if (dir[strlen(dir) - 1] != '/' && dir[strlen(dir) - 1] != '\\') {
         strcat(dir_local, "/");
     }
@@ -166,15 +166,12 @@ int main(int argc, const char *argv[])
     for (std::vector<int*>::iterator it = fingerprints.begin(); it != fingerprints.end(); it++)
     {
         unsigned int *data = (unsigned int *)*it;
-        // print the size
-        printf("%s size: %d\n", files[curfile].c_str(), data[0]);
-        curfile++;
-
-
-
-
+        
         int reference_len = data[0];
         int sample_len = sizeof(sample) / sizeof(int);
+
+        // print the size
+        printf("%s ID size: %d, sample size: %d\n", files[curfile].c_str(), reference_len, sample_len);
 
         if (reference_len < sample_len)
         {
@@ -211,6 +208,7 @@ int main(int argc, const char *argv[])
                 globalfile = curfile;
             }
         }
+        curfile++;
     }
     printf("Least amount of set bits: %d\n", minbits);
     printf("Chosen file: %s\n", files[globalfile].c_str());
