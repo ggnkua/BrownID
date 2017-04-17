@@ -112,6 +112,280 @@ void getdir(char *dir, vector<string> &files, const char *extension, bool recurs
     free(dir_local);
 }
 
+// All this code from here onwards comes from https://raw.githubusercontent.com/acoustid/pg_acoustid/master/acoustid_compare.c with some modifications
+
+#define float4 double
+#define Min min
+#define Max max
+#define int32 int
+#define palloc0 malloc
+#define pfree free
+
+/* fingerprint matcher settings */
+#define ACOUSTID_MAX_BIT_ERROR 2
+#define ACOUSTID_MAX_ALIGN_OFFSET 120
+#define ACOUSTID_QUERY_START 80
+#define ACOUSTID_QUERY_LENGTH 120
+#define ACOUSTID_QUERY_BITS 28
+#define ACOUSTID_QUERY_MASK (((1<<ACOUSTID_QUERY_BITS)-1)<<(32-ACOUSTID_QUERY_BITS))
+#define ACOUSTID_QUERY_STRIP(x) ((x) & ACOUSTID_QUERY_MASK)
+
+#define MATCH_BITS 14
+#define MATCH_MASK ((1 << MATCH_BITS) - 1)
+#define MATCH_STRIP(x) ((uint32_t)(x) >> (32 - MATCH_BITS))
+
+#define UNIQ_BITS 16
+#define UNIQ_MASK ((1 << MATCH_BITS) - 1)
+#define UNIQ_STRIP(x) ((uint32_t)(x) >> (32 - MATCH_BITS))
+
+/* useful macros for accessing int32 arrays */
+#define ARRPTR(x)  ( (int32 *) ARR_DATA_PTR(x) )
+#define ARRNELEMS(x)  ArrayGetNItems(ARR_NDIM(x), ARR_DIMS(x))
+
+/* reject arrays we can't handle; but allow a NULL or empty array */
+#define CHECKARRVALID(x) \
+	do { \
+		if (x) { \
+			if (ARR_NDIM(x) != NDIM && ARR_NDIM(x) != 0) \
+				ereport(ERROR, \
+						(errcode(ERRCODE_ARRAY_SUBSCRIPT_ERROR), \
+						 errmsg("array must be one-dimensional"))); \
+			if (ARR_HASNULL(x)) \
+				ereport(ERROR, \
+						(errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED), \
+						 errmsg("array must not contain nulls"))); \
+		} \
+	} while(0)
+
+#define ARRISVOID(x)  ((x) == NULL || ARRNELEMS(x) == 0)
+
+/* From http://en.wikipedia.org/wiki/Hamming_weight */
+
+const uint64_t m1 = 0x5555555555555555ULL; /* binary: 0101... */
+const uint64_t m2 = 0x3333333333333333ULL; /* binary: 00110011.. */
+const uint64_t m4 = 0x0f0f0f0f0f0f0f0fULL; /* binary:  4 zeros,  4 ones ... */
+const uint64_t m8 = 0x00ff00ff00ff00ffULL; /* binary:  8 zeros,  8 ones ... */
+const uint64_t m16 = 0x0000ffff0000ffffULL; /* binary: 16 zeros, 16 ones ... */
+const uint64_t m32 = 0x00000000ffffffffULL; /* binary: 32 zeros, 32 ones */
+const uint64_t hff = 0xffffffffffffffffULL; /* binary: all ones */
+const uint64_t h01 = 0x0101010101010101ULL; /* the sum of 256 to the power of 0,1,2,3... */
+
+unsigned char popcount_table_8bit[] = {
+0,1,1,2,1,2,2,3,1,2,2,3,2,3,3,4,1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,
+1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,
+1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,
+2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,
+1,2,2,3,2,3,3,4,2,3,3,4,3,4,4,5,2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,
+2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,
+2,3,3,4,3,4,4,5,3,4,4,5,4,5,5,6,3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,
+3,4,4,5,4,5,5,6,4,5,5,6,5,6,6,7,4,5,5,6,5,6,6,7,5,6,6,7,6,7,7,8,
+}; 
+
+
+static inline int popcount_lookup8(unsigned int x)
+{
+    return
+        popcount_table_8bit[x & 0xffu] +
+        popcount_table_8bit[(x >> 8) & 0xffu] +
+        popcount_table_8bit[(x >> 16) & 0xffu] +
+        popcount_table_8bit[x >> 24];
+}
+
+inline static int
+popcount_3(uint64_t x)
+{
+    x -= (x >> 1) & m1;             /* put count of each 2 bits into those 2 bits */
+    x = (x & m2) + ((x >> 2) & m2); /* put count of each 4 bits into those 4 bits */
+    x = (x + (x >> 4)) & m4;        /* put count of each 8 bits into those 8 bits */
+    return (x * h01) >> 56;         /* returns left 8 bits of x + (x<<8) + (x<<16) + (x<<24) + ...  */
+}
+
+#define BITCOUNT(x)  popcount_lookup8(x)
+#define BITCOUNT64(x)  popcount_3(x)
+
+static float4
+match_fingerprints(int32 *a, int asize, int32 *b, int bsize)
+{
+    int i, j, topcount;
+    int numcounts = asize + bsize + 1;
+    int *counts = (int *)palloc0(sizeof(int) * numcounts);
+
+    for (i = 0; i < asize; i++) {
+        int jbegin = Max(0, i - ACOUSTID_MAX_ALIGN_OFFSET);
+        int jend = Min(bsize, i + ACOUSTID_MAX_ALIGN_OFFSET);
+        for (j = jbegin; j < jend; j++) {
+            int biterror = BITCOUNT(a[i] ^ b[j]);
+            /* ereport(DEBUG5, (errmsg("comparing %d and %d with error %d", i, j, biterror))); */
+            if (biterror <= ACOUSTID_MAX_BIT_ERROR) {
+                int offset = i - j + bsize;
+                counts[offset]++;
+            }
+        }
+    }
+
+    topcount = 0;
+    for (i = 0; i < numcounts; i++) {
+        if (counts[i] > topcount) {
+            topcount = counts[i];
+        }
+    }
+
+    pfree(counts);
+
+    return (float4)topcount / Min(asize, bsize);
+}
+
+static float4
+match_fingerprints2(int32 *a, int asize, int32 *b, int bsize, int maxoffset)
+{
+    int i, topcount, topoffset, size, biterror, minsize, auniq = 0, buniq = 0;
+    int numcounts = asize + bsize + 1;
+    unsigned short *counts = (unsigned short *)palloc0(sizeof(unsigned short) * numcounts);
+    uint8_t *seen;
+    uint16_t *aoffsets, *boffsets;
+    uint64_t *adata, *bdata;
+    float4 score, diversity;
+
+    aoffsets = (uint16_t *)palloc0(sizeof(uint16_t) * (MATCH_MASK + 1) * 2);
+    boffsets = aoffsets + MATCH_MASK + 1;
+    seen = (uint8_t *)aoffsets;
+
+    for (i = 0; i < asize; i++) {
+        aoffsets[MATCH_STRIP(a[i])] = i;
+    }
+    for (i = 0; i < bsize; i++) {
+        boffsets[MATCH_STRIP(b[i])] = i;
+    }
+
+    topcount = 0;
+    topoffset = 0;
+    for (i = 0; i < MATCH_MASK; i++) {
+        if (aoffsets[i] && boffsets[i]) {
+            int offset = aoffsets[i] - boffsets[i];
+            if (maxoffset == 0 || (-maxoffset <= offset && offset <= maxoffset)) {
+                offset += bsize;
+                counts[offset]++;
+                if (counts[offset] > topcount) {
+                    topcount = counts[offset];
+                    topoffset = offset;
+                }
+            }
+        }
+    }
+
+    topoffset -= bsize;
+
+    minsize = Min(asize, bsize) & ~1;
+    if (topoffset < 0) {
+        b -= topoffset;
+        bsize = Max(0, bsize + topoffset);
+    }
+    else {
+        a += topoffset;
+        asize = Max(0, asize - topoffset);
+    }
+
+    size = Min(asize, bsize) / 2;
+    if (!size || !minsize) {
+        //ereport(DEBUG4, (errmsg("acoustid_compare2: empty matching subfingerprint")));
+        printf("acoustid_compare2: empty matching subfingerprint");
+        score = 0.0;
+        goto exit;
+    }
+
+    memset(seen, 0, UNIQ_MASK);
+    for (i = 0; i < asize; i++) {
+        int key = UNIQ_STRIP(a[i]);
+        if (!seen[key]) {
+            auniq++;
+            seen[key] = 1;
+        }
+    }
+
+    memset(seen, 0, UNIQ_MASK);
+    for (i = 0; i < bsize; i++) {
+        int key = UNIQ_STRIP(b[i]);
+        if (!seen[key]) {
+            buniq++;
+            seen[key] = 1;
+        }
+    }
+
+    diversity = Min(Min(1.0, (float)(auniq + 10) / asize + 0.5),
+        Min(1.0, (float)(buniq + 10) / bsize + 0.5));
+
+    //ereport(DEBUG5, (errmsg("acoustid_compare2: offset %d, offset score %d, size %d, uniq size %d, diversity %f", topoffset, topcount, size * 2, Max(auniq, buniq), diversity)));
+    printf("acoustid_compare2: offset %d, offset score %d, size %d, uniq size %d, diversity %f", topoffset, topcount, size * 2, Max(auniq, buniq), diversity);
+
+    if (topcount < Max(auniq, buniq) * 0.02) {
+        //ereport(DEBUG4, (errmsg("acoustid_compare2: top offset score is below 2%% of the unique size")));
+        printf("acoustid_compare2: top offset score is below 2%% of the unique size");
+        score = 0.0;
+        goto exit;
+    }
+
+    adata = (uint64_t *)a;
+    bdata = (uint64_t *)b;
+    biterror = 0;
+    for (i = 0; i < size; i++, adata++, bdata++) {
+        biterror += BITCOUNT64(*adata ^ *bdata);
+    }
+    score = (size * 2.0 / minsize) * (1.0 - 2.0 * (float4)biterror / (64 * size));
+    if (score < 0.0) {
+        score = 0.0;
+    }
+    if (diversity < 1.0) {
+        float newscore = pow(score, 8.0 - 7.0 * diversity);
+        //ereport(DEBUG4, (errmsg("acoustid_compare2: scaling score because of duplicate items, %f => %f", score, newscore)));
+        printf("acoustid_compare2: scaling score because of duplicate items, %f => %f", score, newscore);
+        score = newscore;
+    }
+exit:
+    pfree(aoffsets);
+    pfree(counts);
+    return score;
+}
+
+static float4
+match_fingerprints3(int32 *a, int asize, int32 *b, int bsize, int maxoffset)
+{
+    int i, j, topcount;
+    int jbegin = 0;
+    int jend = bsize;
+    int numcounts = asize + bsize + 1;
+    int *counts = palloc0(sizeof(int) * numcounts);
+
+    for (i = 0; i < asize; i++) {
+        if (maxoffset > -1) {
+            jbegin = Max(0, i - maxoffset);
+            jend = Min(bsize, i + maxoffset);
+        }
+        for (j = jbegin; j < jend; j++) {
+            int offset = i - j + bsize;
+            int biterror = BITCOUNT(a[i] ^ b[j]);
+            // Randomly selected blocks share around half their bits, so only count
+            // errors less than 16 bits
+            if (biterror < 16) {
+                counts[offset] += 16 - biterror;
+            }
+        }
+    }
+
+    topcount = 0;
+    for (i = 0; i < numcounts; i++) {
+        if (counts[i] > topcount) {
+            topcount = counts[i];
+        }
+    }
+
+    pfree(counts);
+
+    return (float4)topcount / (16.0 * Min(asize, bsize));
+}
+
+// All this code up to here comes from https://raw.githubusercontent.com/acoustid/pg_acoustid/master/acoustid_compare.c with some modifications
+
+
 int main(int argc, const char *argv[])
 {
 
