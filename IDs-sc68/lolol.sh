@@ -1,6 +1,8 @@
 #for i in `find ./sndh_lf/ -name "* *.sndh"`; do echo "$i"; ../sc68-code/sc68/sc68 "$i" -q --rate 44100 --wav -o lolol.wav; ./fpcalc -length 50000 -text -plain lolol.wav>"$i.id"; done
 
-find . -type f -name '*.sndh' -print0 | while IFS= read -r -d '' i; do echo "$i"; ../sc68-code/sc68/sc68 "$i" -q --rate 44100 --wav -o lolol.wav; ./fpcalc -length 50000 -text -plain lolol.wav>"$i.id"; done
+find . -type f -name '*.sndh' -print0 | while IFS= read -r -d '' i; do echo "$i"; ../sc68-code/sc68/sc68 "$i" -q --rate 44100 --wav -o lolol.wav; ./fpcalc -length 50000 -raw -plain lolol.wav>"$i.id"; sed -i -e "s/,/\r\n/gI" "$i.id"; done
+
+rm lolol.wav
 
 #  -h --help           Print this message and exit (incremental)
 #  -v --version        Print sc68 version x.y.z and #licence and exit
