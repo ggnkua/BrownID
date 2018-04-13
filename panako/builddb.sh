@@ -1,1 +1,1 @@
-bash lolol.sh >lol.log 2>&1
+bash builddb.sh >lol.log 2>&1
