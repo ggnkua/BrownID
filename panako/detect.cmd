@@ -7,4 +7,4 @@ for /f %%j in ("java.exe") do (
 	)
 )
 
-java -jar panako\panako-1.6.jar query %1
+java -jar panako-1.6.jar query %1
